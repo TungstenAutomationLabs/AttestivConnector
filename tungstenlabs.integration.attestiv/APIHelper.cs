@@ -79,6 +79,82 @@ namespace tungstenlabs.integration.attestiv
             return Initialize(sv[ATT_API_URL].Value, sv[ATT_USER_ID].Value, sv[ATT_PSWD_ID].Value, taSessionId, taSdkUrl);
         }
 
+        /// <summary>
+        /// Communicates with Attestiv API to call their "Analyze Image" method.
+        /// </summary>
+        /// <param name="taDocId">TotalAgility Document ID.</param>
+        /// <param name="taSessionId">TA SessionID.</param>
+        /// <param name="taSdkUrl">TA SDK URL.</param>
+        public string AnalyzeImage(string taDocId, string taSessionId, string taSdkUrl, string docFileExt)
+        {
+            int maxRetries = 3;
+            int count = 0;
+            bool shouldRetry;
+            string responseContent = "";
+
+            List<string> vars = new List<string>() { ATT_ACCESS_TOKEN, ATT_API_URL };
+
+            do
+            {
+                shouldRetry = false;
+                ServerVariableHelper serverVariableHelper = new ServerVariableHelper();
+                var sv = serverVariableHelper.GetServerVariables(taSessionId, taSdkUrl, vars);
+
+                string eventUrl = $"{sv[ATT_API_URL].Value}/forensics/detect";
+                byte[] payload = GetKTADocumentFile(taDocId, taSdkUrl, taSessionId);
+
+                HttpWebRequest request = (HttpWebRequest)WebRequest.Create(eventUrl);
+                request.Method = "POST";
+                request.ContentType = GetMimeType(docFileExt, payload);
+                request.ContentLength = payload.Length;
+                request.Headers["Authorization"] = $"Bearer {sv[ATT_ACCESS_TOKEN].Value}";
+                request.Accept = "application/json";
+
+                using (Stream writer = request.GetRequestStream())
+                {
+                    writer.Write(payload, 0, payload.Length);
+                    writer.Flush();
+                }
+
+                try
+                {
+                    using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
+                    {
+                        using (StreamReader reader = new StreamReader(response.GetResponseStream()))
+                        {
+                            responseContent = reader.ReadToEnd();
+                        }
+                    }
+                }
+                catch (WebException ex) when (ex.Response is HttpWebResponse httpResponse && httpResponse.StatusCode == HttpStatusCode.Unauthorized)
+                {
+                    if (count < maxRetries)
+                    {
+                        count++;
+                        shouldRetry = true;
+                        Authenticate(taSessionId, taSdkUrl); // Call the method to authenticate and refresh tokens.
+                    }
+                    else
+                    {
+                        throw new InvalidOperationException("Maximum retry attempts reached. Unable to authenticate.", ex);
+                    }
+                }
+                catch (WebException ex)
+                {
+                    using (HttpWebResponse response = (HttpWebResponse)ex.Response)
+                    {
+                        using (StreamReader reader = new StreamReader(response.GetResponseStream()))
+                        {
+                            responseContent = reader.ReadToEnd();
+                        }
+                    }
+                }
+
+            } while (shouldRetry);
+
+            return responseContent;
+        }
+
         private string ComputeSha256Hash(string rawData)
         {
             using (SHA256 sha256Hash = SHA256.Create())
@@ -147,6 +223,60 @@ namespace tungstenlabs.integration.attestiv
                 status = "An error occured: " + ex.ToString();
                 return result;
             }
+        }
+
+        public static string GetMimeType(string fileExtension, byte[] fileBytes)
+        {
+            // Attempt to get MIME type based on the file extension
+            if (!fileExtension.StartsWith(".")) { fileExtension = "." + fileExtension; }
+            string mimeType = "application/octet-stream"; // Default unknown type
+            if (!string.IsNullOrWhiteSpace(fileExtension))
+            {
+                try
+                {
+                    mimeType = System.Web.MimeMapping.GetMimeMapping(fileExtension);
+                }
+                catch
+                {
+                    // Handle exceptions if the MimeMapping fails or is unavailable
+                }
+
+                // If a valid MIME type was retrieved from the extension, return it
+                if (!string.IsNullOrWhiteSpace(mimeType) && !mimeType.Equals("application/octet-stream", StringComparison.OrdinalIgnoreCase))
+                {
+                    return mimeType;
+                }
+            }
+
+            // If extension-based lookup failed, use byte-signature-based lookup
+            if (fileBytes == null || fileBytes.Length < 4)
+                return mimeType;  // Default unknown type
+
+            // Define file signatures in byte arrays
+            byte[] jpg = new byte[] { 0xFF, 0xD8 };
+            byte[] png = new byte[] { 0x89, 0x50, 0x4E, 0x47 };
+            byte[] gif = new byte[] { 0x47, 0x49, 0x46 };
+            byte[] tiffI = new byte[] { 0x49, 0x49, 0x2A, 0x00 };
+            byte[] tiffM = new byte[] { 0x4D, 0x4D, 0x00, 0x2A };
+            byte[] pdf = new byte[] { 0x25, 0x50, 0x44, 0x46 };
+
+            // Compare file signature with defined signatures
+            if (fileBytes.Take(jpg.Length).SequenceEqual(jpg))
+                return "image/jpeg";
+
+            if (fileBytes.Take(png.Length).SequenceEqual(png))
+                return "image/png";
+
+            if (fileBytes.Take(gif.Length).SequenceEqual(gif))
+                return "image/gif";
+
+            if (fileBytes.Take(tiffI.Length).SequenceEqual(tiffI) || fileBytes.Take(tiffM.Length).SequenceEqual(tiffM))
+                return "image/tiff";
+
+            if (fileBytes.Take(pdf.Length).SequenceEqual(pdf))
+                return "application/pdf";
+
+            return mimeType;  // Return default type if none of the byte signatures match
         }
     }
 }
