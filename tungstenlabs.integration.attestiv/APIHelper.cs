@@ -24,14 +24,17 @@ namespace tungstenlabs.integration.attestiv
         /// <summary>
         /// Authenticates with Attestiv API using JWT and retrieves an access token, then saves all values in TA's server variables.
         /// </summary>
-        public bool Initialize(string baseApiUrl, string userId, string pswd, string taSessionId, string taSdkUrl)
+        public bool Initialize(string baseApiUrl, string userId, string pswd, string taSessionId, string taSdkUrl, bool isPswdHashed)
         {
+            string password = pswd;
+
             // Encode the password using SHA-256
-            string hashedPassword = ComputeSha256Hash(pswd);
+            if (!isPswdHashed)
+                password = ComputeSha256Hash(pswd);
 
             string tokenUrl = $"{baseApiUrl}/users/login";
 
-            string json = $"{{ \"username\": \"{userId}\", \"password\": \"{hashedPassword}\" }}"; 
+            string json = $"{{ \"username\": \"{userId}\", \"password\": \"{password}\" }}"; 
 
             HttpWebRequest request = (HttpWebRequest)WebRequest.Create(tokenUrl);
             request.Method = "POST";
@@ -61,7 +64,7 @@ namespace tungstenlabs.integration.attestiv
             dict[ATT_ACCESS_TOKEN] = new KeyValuePair<string, string>(dict[ATT_ACCESS_TOKEN].Key, accessToken);
             dict[ATT_API_URL] = new KeyValuePair<string, string>(dict[ATT_API_URL].Key, baseApiUrl);
             dict[ATT_USER_ID] = new KeyValuePair<string, string>(dict[ATT_USER_ID].Key, userId);
-            dict[ATT_PSWD_ID] = new KeyValuePair<string, string>(dict[ATT_PSWD_ID].Key, hashedPassword);
+            dict[ATT_PSWD_ID] = new KeyValuePair<string, string>(dict[ATT_PSWD_ID].Key, password);
 
             Dictionary<string, string> newDict = dict.ToDictionary(kvp => kvp.Value.Key, kvp => kvp.Value.Value);
             serverVariableHelper.UpdateServerVariables(newDict, taSessionId, taSdkUrl);
@@ -80,8 +83,60 @@ namespace tungstenlabs.integration.attestiv
             ServerVariableHelper serverVariableHelper = new ServerVariableHelper();
             var sv = serverVariableHelper.GetServerVariables(taSessionId, taSdkUrl, vars);
 
-            return Initialize(sv[ATT_API_URL].Value, sv[ATT_USER_ID].Value, sv[ATT_PSWD_ID].Value, taSessionId, taSdkUrl);
+            return Initialize(sv[ATT_API_URL].Value, sv[ATT_USER_ID].Value, sv[ATT_PSWD_ID].Value, taSessionId, taSdkUrl, true);
         }
+
+        /// <summary>
+        /// Uses the resulting JSON to extract the tamperscore for each file.
+        /// </summary>
+        public string ExtractImageAndTamperScore(string jsonInput, int maxTamperScore)
+        {
+            // Parse the input JSON into a JArray
+            JArray inputArray = JArray.Parse(jsonInput);
+
+            // Create a list to hold simplified results
+            var results = new List<object>();
+            bool hasInvalidDocuments = false;
+
+            // Iterate through each item in the array
+            foreach (var item in inputArray)
+            {
+                var detectTamperingResult = item["detect_tampering_result"];
+                if (detectTamperingResult != null)
+                {
+                    var image = detectTamperingResult["image"]?.ToString();
+                    var tamperScoreString = detectTamperingResult["tamperScore"]?.ToString();
+
+                    if (!string.IsNullOrEmpty(image) && !string.IsNullOrEmpty(tamperScoreString))
+                    {
+                        int tamperScore = int.Parse(tamperScoreString);
+
+                        // Check if tamperScore exceeds maxTamperScore
+                        if (tamperScore > maxTamperScore)
+                        {
+                            hasInvalidDocuments = true;
+                        }
+
+                        results.Add(new
+                        {
+                            Image = image,
+                            TamperScore = tamperScore
+                        });
+                    }
+                }
+            }
+
+            // Create the final result including the flag
+            var finalResult = new
+            {
+                HasInvalidDocuments = hasInvalidDocuments,
+                Records = results
+            };
+
+            // Convert the final result to a JSON string
+            return JsonConvert.SerializeObject(finalResult, Formatting.Indented);
+        }
+
 
         /// <summary>
         /// Communicates with Attestiv API to call their "Analyze Image" method.
@@ -94,7 +149,6 @@ namespace tungstenlabs.integration.attestiv
             int maxRetries = 3;
             int count = 0;
             bool shouldRetry;
-            string responseContent = "";
 
             List<string> vars = new List<string>() { ATT_ACCESS_TOKEN, ATT_API_URL };
 
@@ -116,44 +170,75 @@ namespace tungstenlabs.integration.attestiv
                         using (var content = new MultipartFormDataContent())
                         {
                             var imageContent = new ByteArrayContent(payload);
-                            imageContent.Headers.ContentType = MediaTypeHeaderValue.Parse("application/octet-stream");
+                            imageContent.Headers.ContentType = MediaTypeHeaderValue.Parse(GetMimeType(GetFileExtension(dict.Key), payload));
                             content.Add(imageContent, "image", dict.Key);
 
-                            var response = client.PostAsync($"{sv[ATT_API_URL].Value}/forensics/detect", content).Result;
-                            if (response.StatusCode != HttpStatusCode.OK)
-                                throw new Exception($"Error analyzing photo: {response.StatusCode}");
+                            // Send the request and await the response
+                            var response = client.PostAsync($"{sv[ATT_API_URL].Value}/forensics/detect", content).GetAwaiter().GetResult();
 
-                            return response.Content.ReadAsStringAsync().Result;
+                            if (response.StatusCode == HttpStatusCode.Unauthorized)
+                            {
+                                if (count < maxRetries)
+                                {
+                                    count++;
+                                    shouldRetry = true;
+                                    Authenticate(taSessionId, taSdkUrl); // Call the method to authenticate and refresh tokens.
+                                }
+                                else
+                                {
+                                    throw new InvalidOperationException("Maximum retry attempts reached. Unable to authenticate.");
+                                }
+                            }
+
+                            if (!response.IsSuccessStatusCode)
+                            {
+                                throw new WebException($"Error analyzing photo: {response.StatusCode}", WebExceptionStatus.ProtocolError);
+                            }
+
+                            return response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
                         }
                     }
                 }
-                catch (WebException ex) when (ex.Response is HttpWebResponse httpResponse && httpResponse.StatusCode == HttpStatusCode.Unauthorized)
+                catch (WebException ex) when (ex.Status == WebExceptionStatus.ProtocolError && ex.Response is HttpWebResponse httpResponse)
                 {
-                    if (count < maxRetries)
+                    if (httpResponse.StatusCode == HttpStatusCode.Unauthorized)
                     {
-                        count++;
-                        shouldRetry = true;
-                        Authenticate(taSessionId, taSdkUrl); // Call the method to authenticate and refresh tokens.
+                        if (count < maxRetries)
+                        {
+                            count++;
+                            shouldRetry = true;
+                            Authenticate(taSessionId, taSdkUrl); // Call the method to authenticate and refresh tokens.
+                        }
+                        else
+                        {
+                            throw new InvalidOperationException("Maximum retry attempts reached. Unable to authenticate.", ex);
+                        }
                     }
                     else
                     {
-                        throw new InvalidOperationException("Maximum retry attempts reached. Unable to authenticate.", ex);
+                        throw new WebException($"HTTP Error: {httpResponse.StatusCode}", ex);
                     }
                 }
                 catch (WebException ex)
                 {
-                    using (HttpWebResponse response = (HttpWebResponse)ex.Response)
+                    string responseError = string.Empty;
+
+                    if (ex.Response is HttpWebResponse errorResponse)
                     {
-                        using (StreamReader reader = new StreamReader(response.GetResponseStream()))
+                        using (var stream = errorResponse.GetResponseStream())
+                        using (var reader = new StreamReader(stream))
                         {
-                            responseContent = reader.ReadToEnd();
+                            responseError = reader.ReadToEnd();
                         }
                     }
+
+                    throw new WebException($"An error occurred: {responseError}", ex);
                 }
+
 
             } while (shouldRetry);
 
-            return responseContent;
+            return "";
         }
 
         /// <summary>
@@ -171,6 +256,7 @@ namespace tungstenlabs.integration.attestiv
 
             List<string> vars = new List<string>() { ATT_ACCESS_TOKEN, ATT_API_URL };
             Dictionary<string, byte[]> files = new Dictionary<string, byte[]>();
+            KeyValuePair<string, byte[]> tafile;
 
             do
             {
@@ -181,10 +267,11 @@ namespace tungstenlabs.integration.attestiv
                 string folder = GetKTAFolder(taFolderId, taSdkUrl, taSessionId);
                 foreach (string doc in GetFirstColumn(folder))
                 {
-                    files.Append(GetKTADocumentFile(doc, taSdkUrl, taSessionId));
+                    tafile = GetKTADocumentFile(doc, taSdkUrl, taSessionId);
+                    files[tafile.Key] = tafile.Value;
                 }
 
-                try 
+                try
                 {
                     using (var client = new HttpClient())
                     {
@@ -199,42 +286,73 @@ namespace tungstenlabs.integration.attestiv
                                     throw new ArgumentException($"Image at index {index} is null or empty.");
 
                                 var imageContent = new ByteArrayContent(file.Value);
-                                imageContent.Headers.ContentType = MediaTypeHeaderValue.Parse("application/octet-stream");
-                                content.Add(imageContent, $"image_{index}", $"{file.Key}");
+                                imageContent.Headers.ContentType = MediaTypeHeaderValue.Parse(GetMimeType(GetFileExtension(file.Key), file.Value));
+                                content.Add(imageContent, "image", file.Key);
                                 index++;
                             }
 
-                            var response = client.PostAsync($"{sv[ATT_API_URL].Value}/forensics/detect", content).Result;
-                            if (response.StatusCode != HttpStatusCode.OK)
-                                throw new Exception($"Error analyzing photos: {response.StatusCode}");
+                            // Send the request and await the response
+                            var response = client.PostAsync($"{sv[ATT_API_URL].Value}/forensics/detect", content).GetAwaiter().GetResult();
 
-                            responseContent = response.Content.ReadAsStringAsync().Result;
+                            if (response.StatusCode == HttpStatusCode.Unauthorized)
+                            {
+                                if (count < maxRetries)
+                                {
+                                    count++;
+                                    shouldRetry = true;
+                                    Authenticate(taSessionId, taSdkUrl); // Call the method to authenticate and refresh tokens.
+                                }
+                                else
+                                {
+                                    throw new InvalidOperationException("Maximum retry attempts reached. Unable to authenticate.");
+                                }
+                            }
+
+                            if (!response.IsSuccessStatusCode)
+                            {
+                                throw new WebException($"Error analyzing photos: {response.StatusCode}", WebExceptionStatus.ProtocolError);
+                            }
+
+                            responseContent = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
                         }
                     }
                 }
-                catch (WebException ex) when (ex.Response is HttpWebResponse httpResponse && httpResponse.StatusCode == HttpStatusCode.Unauthorized)
+                catch (WebException ex) when (ex.Status == WebExceptionStatus.ProtocolError && ex.Response is HttpWebResponse httpResponse)
                 {
-                    if (count < maxRetries)
+                    if (httpResponse.StatusCode == HttpStatusCode.Unauthorized)
                     {
-                        count++;
-                        shouldRetry = true;
-                        Authenticate(taSessionId, taSdkUrl); // Call the method to authenticate and refresh tokens.
+                        if (count < maxRetries)
+                        {
+                            count++;
+                            shouldRetry = true;
+                            Authenticate(taSessionId, taSdkUrl); // Call the method to authenticate and refresh tokens.
+                        }
+                        else
+                        {
+                            throw new InvalidOperationException("Maximum retry attempts reached. Unable to authenticate.", ex);
+                        }
                     }
                     else
                     {
-                        throw new InvalidOperationException("Maximum retry attempts reached. Unable to authenticate.", ex);
+                        throw new WebException($"HTTP Error: {httpResponse.StatusCode}", ex);
                     }
                 }
                 catch (WebException ex)
                 {
-                    using (HttpWebResponse response = (HttpWebResponse)ex.Response)
+                    string errorMsg = string.Empty;
+
+                    if (ex.Response is HttpWebResponse errorResponse)
                     {
-                        using (StreamReader reader = new StreamReader(response.GetResponseStream()))
+                        using (var stream = errorResponse.GetResponseStream())
+                        using (var reader = new StreamReader(stream))
                         {
-                            responseContent = reader.ReadToEnd();
+                            errorMsg = reader.ReadToEnd();
                         }
                     }
+
+                    throw new WebException($"An error occurred: {errorMsg}", ex);
                 }
+
 
                 return responseContent;
 
@@ -436,6 +554,18 @@ namespace tungstenlabs.integration.attestiv
                 return "application/pdf";
 
             return mimeType;  // Return default type if none of the byte signatures match
+        }
+
+        private string GetFileExtension(string fileName)
+        {
+            if (string.IsNullOrEmpty(fileName))
+                return string.Empty;
+
+            int lastDotIndex = fileName.LastIndexOf('.');
+            if (lastDotIndex == -1 || lastDotIndex == fileName.Length - 1)
+                return string.Empty; // No extension or the file ends with a dot.
+
+            return fileName.Substring(lastDotIndex + 1);
         }
     }
 }
