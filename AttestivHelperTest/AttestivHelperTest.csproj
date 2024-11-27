@@ -111,17 +111,17 @@
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\tungstenlabs.integration.attestiv\tungstenlabs.integration.attestiv.csproj">
-      <Project>{6e778512-0f7d-43a4-9fa7-c462b7044e45}</Project>
-      <Name>tungstenlabs.integration.attestiv</Name>
-    </ProjectReference>
-  </ItemGroup>
-  <ItemGroup>
     <None Include="app.config" />
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="ILLink\ILLink.Descriptors.LibraryBuild.xml" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\tungstenlabs.integration.attestiv\tungstenlabs.integration.attestiv.csproj">
+      <Project>{6e778512-0f7d-43a4-9fa7-c462b7044e45}</Project>
+      <Name>tungstenlabs.integration.attestiv</Name>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(VSToolsPath)\TeamTest\Microsoft.TestTools.targets" Condition="Exists('$(VSToolsPath)\TeamTest\Microsoft.TestTools.targets')" />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
