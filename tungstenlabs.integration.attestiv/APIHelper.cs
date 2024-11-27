@@ -4,9 +4,13 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Net.Http.Headers;
+using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
+using static System.Net.Mime.MediaTypeNames;
+using Newtonsoft.Json;
 
 namespace tungstenlabs.integration.attestiv
 {
@@ -82,10 +86,10 @@ namespace tungstenlabs.integration.attestiv
         /// <summary>
         /// Communicates with Attestiv API to call their "Analyze Image" method.
         /// </summary>
-        /// <param name="taDocId">TotalAgility Document ID.</param>
+        /// <param name="taDocId">TotalAgility Document ID; this can only be an image file</param>
         /// <param name="taSessionId">TA SessionID.</param>
         /// <param name="taSdkUrl">TA SDK URL.</param>
-        public string AnalyzeImage(string taDocId, string taSessionId, string taSdkUrl, string docFileExt)
+        public string AnalyzeImage(string taDocId, string taSessionId, string taSdkUrl)
         {
             int maxRetries = 3;
             int count = 0;
@@ -100,29 +104,26 @@ namespace tungstenlabs.integration.attestiv
                 ServerVariableHelper serverVariableHelper = new ServerVariableHelper();
                 var sv = serverVariableHelper.GetServerVariables(taSessionId, taSdkUrl, vars);
 
-                string eventUrl = $"{sv[ATT_API_URL].Value}/forensics/detect";
-                byte[] payload = GetKTADocumentFile(taDocId, taSdkUrl, taSessionId);
-
-                HttpWebRequest request = (HttpWebRequest)WebRequest.Create(eventUrl);
-                request.Method = "POST";
-                request.ContentType = GetMimeType(docFileExt, payload);
-                request.ContentLength = payload.Length;
-                request.Headers["Authorization"] = $"Bearer {sv[ATT_ACCESS_TOKEN].Value}";
-                request.Accept = "application/json";
-
-                using (Stream writer = request.GetRequestStream())
-                {
-                    writer.Write(payload, 0, payload.Length);
-                    writer.Flush();
-                }
+                KeyValuePair<string,byte[]> dict = GetKTADocumentFile(taDocId, taSdkUrl, taSessionId);
+                byte[] payload = dict.Value;
 
                 try
                 {
-                    using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
+                    using (var client = new HttpClient())
                     {
-                        using (StreamReader reader = new StreamReader(response.GetResponseStream()))
+                        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", sv[ATT_ACCESS_TOKEN].Value);
+
+                        using (var content = new MultipartFormDataContent())
                         {
-                            responseContent = reader.ReadToEnd();
+                            var imageContent = new ByteArrayContent(payload);
+                            imageContent.Headers.ContentType = MediaTypeHeaderValue.Parse("application/octet-stream");
+                            content.Add(imageContent, "image", dict.Key);
+
+                            var response = client.PostAsync($"{sv[ATT_API_URL].Value}/forensics/detect", content).Result;
+                            if (response.StatusCode != HttpStatusCode.OK)
+                                throw new Exception($"Error analyzing photo: {response.StatusCode}");
+
+                            return response.Content.ReadAsStringAsync().Result;
                         }
                     }
                 }
@@ -155,6 +156,92 @@ namespace tungstenlabs.integration.attestiv
             return responseContent;
         }
 
+        /// <summary>
+        /// Communicates with Attestiv API to call their "Analyze Image Bulk" method.
+        /// </summary>
+        /// <param name="taFolderId">TotalAgility Folder ID; this can only be an image files</param>
+        /// <param name="taSessionId">TA SessionID.</param>
+        /// <param name="taSdkUrl">TA SDK URL.</param>
+        public string AnalyzeImageBulk(string taFolderId, string taSessionId, string taSdkUrl)
+        {
+            int maxRetries = 3;
+            int count = 0;
+            bool shouldRetry;
+            string responseContent = "";
+
+            List<string> vars = new List<string>() { ATT_ACCESS_TOKEN, ATT_API_URL };
+            Dictionary<string, byte[]> files = new Dictionary<string, byte[]>();
+
+            do
+            {
+                shouldRetry = false;
+                ServerVariableHelper serverVariableHelper = new ServerVariableHelper();
+                var sv = serverVariableHelper.GetServerVariables(taSessionId, taSdkUrl, vars);
+
+                string folder = GetKTAFolder(taFolderId, taSdkUrl, taSessionId);
+                foreach (string doc in GetFirstColumn(folder))
+                {
+                    files.Append(GetKTADocumentFile(doc, taSdkUrl, taSessionId));
+                }
+
+                try 
+                {
+                    using (var client = new HttpClient())
+                    {
+                        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", sv[ATT_ACCESS_TOKEN].Value);
+
+                        using (var content = new MultipartFormDataContent())
+                        {
+                            int index = 1;
+                            foreach (var file in files)
+                            {
+                                if (file.Value == null || file.Value.Length == 0)
+                                    throw new ArgumentException($"Image at index {index} is null or empty.");
+
+                                var imageContent = new ByteArrayContent(file.Value);
+                                imageContent.Headers.ContentType = MediaTypeHeaderValue.Parse("application/octet-stream");
+                                content.Add(imageContent, $"image_{index}", $"{file.Key}");
+                                index++;
+                            }
+
+                            var response = client.PostAsync($"{sv[ATT_API_URL].Value}/forensics/detect", content).Result;
+                            if (response.StatusCode != HttpStatusCode.OK)
+                                throw new Exception($"Error analyzing photos: {response.StatusCode}");
+
+                            responseContent = response.Content.ReadAsStringAsync().Result;
+                        }
+                    }
+                }
+                catch (WebException ex) when (ex.Response is HttpWebResponse httpResponse && httpResponse.StatusCode == HttpStatusCode.Unauthorized)
+                {
+                    if (count < maxRetries)
+                    {
+                        count++;
+                        shouldRetry = true;
+                        Authenticate(taSessionId, taSdkUrl); // Call the method to authenticate and refresh tokens.
+                    }
+                    else
+                    {
+                        throw new InvalidOperationException("Maximum retry attempts reached. Unable to authenticate.", ex);
+                    }
+                }
+                catch (WebException ex)
+                {
+                    using (HttpWebResponse response = (HttpWebResponse)ex.Response)
+                    {
+                        using (StreamReader reader = new StreamReader(response.GetResponseStream()))
+                        {
+                            responseContent = reader.ReadToEnd();
+                        }
+                    }
+                }
+
+                return responseContent;
+
+            } while (shouldRetry);
+
+        }
+
         private string ComputeSha256Hash(string rawData)
         {
             using (SHA256 sha256Hash = SHA256.Create())
@@ -172,15 +259,37 @@ namespace tungstenlabs.integration.attestiv
             }
         }
 
-        private byte[] GetKTADocumentFile(string docID, string ktaSDKUrl, string sessionID)
+        private KeyValuePair<string,byte[]> GetKTADocumentFile(string docID, string ktaSDKUrl, string sessionID)
         {
-            byte[] result = new byte[1];
+            byte[] file = new byte[1];
             byte[] buffer = new byte[4096];
             //string fileType = "pdf";
             string status = "OK";
 
             try
             {
+                //Setting the URi and calling the get document API
+                string KTAGetDocument = ktaSDKUrl + "/CaptureDocumentService.svc/json/GetDocument";
+                HttpClient httpClient = new HttpClient();
+                var getRequestPayload = new
+                {
+                    sessionId = sessionID,
+                    documentId = docID
+                };
+
+                var getRequestContent = new StringContent(JsonConvert.SerializeObject(getRequestPayload), Encoding.UTF8, "application/json");
+                var getResponse = httpClient.PostAsync(KTAGetDocument, getRequestContent).GetAwaiter().GetResult();
+
+                if (!getResponse.IsSuccessStatusCode)
+                {
+                    throw new Exception($"Error fetching server variable: {getResponse.ReasonPhrase}");
+                }
+
+                var getResponseContent = getResponse.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                // Parse the JSON into a JArray
+                var getResponseJson = JObject.Parse(getResponseContent);
+                string filename = getResponseJson["d"]?["FileName"]?.ToString();
+
                 //Setting the URi and calling the get document API
                 var KTAGetDocumentFile = ktaSDKUrl + "/CaptureDocumentService.svc/json/GetDocumentFile2";
                 HttpWebRequest httpWebRequest = (HttpWebRequest)WebRequest.Create(KTAGetDocumentFile);
@@ -212,17 +321,67 @@ namespace tungstenlabs.integration.attestiv
                             memoryStream.Write(buffer, 0, count);
                         } while (count != 0);
 
-                        result = memoryStream.ToArray();
+                        file = memoryStream.ToArray();
                     }
+                }
+
+                return new KeyValuePair<string, byte[]>(filename, file);
+            }
+            catch (Exception ex)
+            {
+                throw new Exception("Exception GetKTADocumentFile: " + ex.ToString(), ex);
+            }
+        }
+
+        private string GetKTAFolder(string folderID, string ktaSDKUrl, string sessionID)
+        {
+            string result = "";
+
+            try
+            {
+
+                //Setting the URi and calling the get document API
+                var KTAGetDocumentFile = ktaSDKUrl + "/CaptureDocumentService.svc/json/GetFolderFieldValue";
+                HttpWebRequest httpWebRequest = (HttpWebRequest)WebRequest.Create(KTAGetDocumentFile);
+                httpWebRequest.ContentType = "application/json";
+                httpWebRequest.Method = "POST";
+
+                // CONSTRUCT JSON Payload
+                using (var streamWriter = new StreamWriter(httpWebRequest.GetRequestStream()))
+                {
+                    //string json = "{\"sessionId\":\"" + sessionID + "\",\"reportingData\": {\"Station\": \"\", \"MarkCompleted\": false }, \"folderId\":\"" + folderID + "\"}";
+                    string json = "{\"sessionId\":\"" + sessionID + "\",\"folderId\":\"" + folderID + "\",\"reportingData\": {\"Station\": \"\",\"MarkCompleted\": false},\"fieldIdentity\": {\"Id\": \"8A3DFE7947444402A4FB47BD0CA2ADD5\",\"Table Row\": 0,\"Table Column\": 0,\"Name\": \"\"}";
+                    streamWriter.Write(json);
+                    streamWriter.Flush();
+                }
+
+                HttpWebResponse httpWebResponse = (HttpWebResponse)httpWebRequest.GetResponse();
+                using (var sr = new StreamReader(httpWebResponse.GetResponseStream()))
+                {
+                    result = sr.ReadToEnd();
                 }
 
                 return result;
             }
             catch (Exception ex)
             {
-                status = "An error occured: " + ex.ToString();
                 return result;
             }
+
+        }
+
+        private string[] GetFirstColumn(string jsonString)
+        {
+            JObject jsonObject = JObject.Parse(jsonString);
+            JArray valueArray = (JArray)jsonObject["d"]["Value"];
+
+            string[] firstColumn = new string[valueArray.Count];
+            for (int i = 0; i < valueArray.Count; i++)
+            {
+                firstColumn[i] = valueArray[i][0].ToString();
+            }
+
+            return firstColumn;
         }
 
         public static string GetMimeType(string fileExtension, byte[] fileBytes)

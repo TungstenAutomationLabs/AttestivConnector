@@ -20,7 +20,7 @@ namespace AttestivHelperTest
             APIHelper aPIHelper = new APIHelper();
             //bool login = aPIHelper.Initialize(url, id, pswd, sessionID, sdk);
 
-            string response = aPIHelper.AnalyzeImage(docID, sessionID, sdk, "pdf");
+            string response = aPIHelper.AnalyzeImage(docID, sessionID, sdk);
         }
     }
 }
