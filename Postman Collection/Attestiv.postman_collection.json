@@ -1,0 +1,105 @@
+{
+	"info": {
+		"_postman_id": "ea0fc917-8da4-4c0a-9450-c6e6c7c66d26",
+		"name": "Attestiv",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "25625769",
+		"_collection_link": "https://tungsten-labs.postman.co/workspace/Attestiv~d4f89aa0-d933-47b1-b315-983d397858f8/collection/37834661-ea0fc917-8da4-4c0a-9450-c6e6c7c66d26?action=share&source=collection_link&creator=25625769"
+	},
+	"item": [
+		{
+			"name": "Photo Analysis",
+			"item": [
+				{
+					"name": "Image Analyze",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbnRpdHkiOiJyYWZhZWwuY2FzdHJvQHR1bmdzdGVuYXV0b21hdGlvbi5jb20iLCJ0eXBlIjoidXNlciIsInNjb3BlcyI6Im9yZ2FuaXphdGlvbnM6KixwYXltZW50OioscXVlc3Rpb25zZXRzOiosbm90aWZpY2F0aW9uOiosam9iczoqLG1ldHJpY3M6cmVhZCxyZWdpc3RyYXRpb246KixvYXV0aDoqLGFzc2V0czoqLGNsaWVudHJlcXVlc3RzOiosZmlsZXM6KixmaW5nZXJwcmludDpyZWFkLHdvcmtmbG93c2Vzc2lvbjoqLG1lZGlhbWV0YWRhdGE6KixtZXNzYWdpbmc6d3JpdGUsb3JnYW5pemF0aW9uczpyZWFkLHF1ZXN0aW9uc2V0czpyZWFkLHJlY29yZHM6Kix1c2VyczoqLHdvcmtmbG93ZGF0YToqLGV4dHJhY3Rpb246cmVhZCxmb3JlbnNpY3M6cmVhZCIsIm1ldGFkYXRhIjp7fSwic2VlZCI6Im50NjBtS1oyc2IwQkFNWlciLCJrZXlzIjp7ImhlcmVNYXBBcGlLZXkiOiJlT2JpUmk2RExSd1VTV19IZGJnX1A5T0Q4TzJVR3VBNVhySHFodUdjbi1JIn0sImlhdCI6MTczMjY2MDY2MywiZXhwIjoxNzMyNjg5NDYzfQ.tgkMySmRaesf8n27bdCNPCbZTYjqaLkzPqpnmHhEjRk",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "image",
+									"type": "file",
+									"src": "postman-cloud:///1ef8204b-4deb-48f0-a712-dac7dcb55509"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{API-URL-PhotoAnalysis}}/forensics/detect",
+							"host": [
+								"{{API-URL-PhotoAnalysis}}"
+							],
+							"path": [
+								"forensics",
+								"detect"
+							]
+						},
+						"description": "Photo analysis"
+					},
+					"response": []
+				},
+				{
+					"name": "Image Analyze (Bulk)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AuthToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "image",
+									"type": "file",
+									"src": [
+										"postman-cloud:///1ef8204b-5a2f-4350-a506-7c7563a42377",
+										"postman-cloud:///1ef8204b-5004-4ab0-940f-2ebb520bffbe",
+										"postman-cloud:///1ef8204b-4deb-48f0-a712-dac7dcb55509"
+									]
+								},
+								{
+									"key": "input_data",
+									"value": "type=photo",
+									"description": "optional parameter; accepts type=photo or type=document",
+									"type": "text",
+									"disabled": true
+								}
+							]
+						},
+						"url": {
+							"raw": "{{API-URL-PhotoAnalysis}}/forensics/detect",
+							"host": [
+								"{{API-URL-PhotoAnalysis}}"
+							],
+							"path": [
+								"forensics",
+								"detect"
+							]
+						},
+						"description": "for images of documents"
+					},
+					"response": []
+				}
+			]
+		}
+	]
+}
