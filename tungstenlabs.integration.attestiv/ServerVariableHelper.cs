@@ -13,7 +13,7 @@ using System.Xml.Linq;
 
 namespace tungstenlabs.integration.attestiv
 {
-    public class ServerVariableHelper
+    class ServerVariableHelper
     {
         public Dictionary<string, KeyValuePair<string, string>> GetServerVariables(string taSessionId, string taSdkUrl, List<string> variableNames)
         {
