@@ -5,7 +5,7 @@ VisualStudioVersion = 17.11.35312.102
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "tungstenlabs.integration.attestiv", "tungstenlabs.integration.attestiv\tungstenlabs.integration.attestiv.csproj", "{6E778512-0F7D-43A4-9FA7-C462B7044E45}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "tungstenlabs.integration.attestiv.tests", "AttestivHelperTest\tungstenlabs.integration.attestiv.tests.csproj", "{A1DC1075-9BBD-44B5-A10F-CC71D3512557}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "tungstenlabs.integration.attestiv.tests", "tungstenlabs.integration.attestiv.tests\tungstenlabs.integration.attestiv.tests.csproj", "{A1DC1075-9BBD-44B5-A10F-CC71D3512557}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
