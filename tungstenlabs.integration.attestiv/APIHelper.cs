@@ -1,16 +1,14 @@
-﻿using Newtonsoft.Json.Linq;
+﻿using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
-using System.Net.Http.Headers;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
-using System.Threading.Tasks;
-using static System.Net.Mime.MediaTypeNames;
-using Newtonsoft.Json;
 
 namespace tungstenlabs.integration.attestiv
 {
@@ -34,7 +32,7 @@ namespace tungstenlabs.integration.attestiv
 
             string tokenUrl = $"{baseApiUrl}/users/login";
 
-            string json = $"{{ \"username\": \"{userId}\", \"password\": \"{password}\" }}"; 
+            string json = $"{{ \"username\": \"{userId}\", \"password\": \"{password}\" }}";
 
             HttpWebRequest request = (HttpWebRequest)WebRequest.Create(tokenUrl);
             request.Method = "POST";
@@ -70,7 +68,6 @@ namespace tungstenlabs.integration.attestiv
             serverVariableHelper.UpdateServerVariables(newDict, taSessionId, taSdkUrl);
 
             return true;
-
         }
 
         /// <summary>
@@ -137,7 +134,6 @@ namespace tungstenlabs.integration.attestiv
             return JsonConvert.SerializeObject(finalResult, Formatting.Indented);
         }
 
-
         /// <summary>
         /// Communicates with Attestiv API to call their "Analyze Image" method.
         /// </summary>
@@ -158,7 +154,7 @@ namespace tungstenlabs.integration.attestiv
                 ServerVariableHelper serverVariableHelper = new ServerVariableHelper();
                 var sv = serverVariableHelper.GetServerVariables(taSessionId, taSdkUrl, vars);
 
-                KeyValuePair<string,byte[]> dict = GetKTADocumentFile(taDocId, taSdkUrl, taSessionId);
+                KeyValuePair<string, byte[]> dict = GetKTADocumentFile(taDocId, taSdkUrl, taSessionId);
                 byte[] payload = dict.Value;
 
                 try
@@ -234,8 +230,6 @@ namespace tungstenlabs.integration.attestiv
 
                     throw new WebException($"An error occurred: {responseError}", ex);
                 }
-
-
             } while (shouldRetry);
 
             return "";
@@ -353,11 +347,8 @@ namespace tungstenlabs.integration.attestiv
                     throw new WebException($"An error occurred: {errorMsg}", ex);
                 }
 
-
                 return responseContent;
-
             } while (shouldRetry);
-
         }
 
         private string ComputeSha256Hash(string rawData)
@@ -377,7 +368,7 @@ namespace tungstenlabs.integration.attestiv
             }
         }
 
-        private KeyValuePair<string,byte[]> GetKTADocumentFile(string docID, string ktaSDKUrl, string sessionID)
+        private KeyValuePair<string, byte[]> GetKTADocumentFile(string docID, string ktaSDKUrl, string sessionID)
         {
             byte[] file = new byte[1];
             byte[] buffer = new byte[4096];
@@ -457,7 +448,6 @@ namespace tungstenlabs.integration.attestiv
 
             try
             {
-
                 //Setting the URi and calling the get document API
                 var KTAGetDocumentFile = ktaSDKUrl + "/CaptureDocumentService.svc/json/GetFolderFieldValue";
                 HttpWebRequest httpWebRequest = (HttpWebRequest)WebRequest.Create(KTAGetDocumentFile);
@@ -485,7 +475,6 @@ namespace tungstenlabs.integration.attestiv
             {
                 return result;
             }
-
         }
 
         private string[] GetFirstColumn(string jsonString)

@@ -2,18 +2,13 @@
 using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
-using System.Net;
 using System.Net.Http;
-using System.Security.Cryptography;
 using System.Text;
-using System.Threading.Tasks;
-using System.Xml.Linq;
 
 namespace tungstenlabs.integration.attestiv
 {
-    class ServerVariableHelper
+    internal class ServerVariableHelper
     {
         public Dictionary<string, KeyValuePair<string, string>> GetServerVariables(string taSessionId, string taSdkUrl, List<string> variableNames)
         {
