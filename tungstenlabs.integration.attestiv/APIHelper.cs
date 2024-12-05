@@ -145,32 +145,43 @@ namespace tungstenlabs.integration.attestiv
         public string ExtractResultTamperScore(string json)
         {
             // Parse the input JSON
-            JArray inputArray = JArray.Parse(json);
-            var resultArray = new JArray();
+            var jsonArray = JArray.Parse(json);
 
-            foreach (var item in inputArray)
+            // Extract the first object's "detect_tampering_result" and simplify it
+            var detectTamperingResult = jsonArray[0]["detect_tampering_result"];
+
+            if (detectTamperingResult == null)
+                throw new ArgumentException("Invalid JSON: detect_tampering_result is missing");
+
+            // Construct the simplified JSON structure
+            var simplifiedJson = new JObject
             {
-                var detectTamperingResult = item["detect_tampering_result"];
-                if (detectTamperingResult != null)
+                ["tamperScore"] = detectTamperingResult["tamperScore"],
+                ["image"] = detectTamperingResult["image"],
+                ["analysisId"] = detectTamperingResult["analysisId"],
+                ["_version"] = detectTamperingResult["_version"],
+                ["type"] = detectTamperingResult["type"],
+                ["assessments"] = new JArray()
+            };
+
+            // Iterate over assessments and extract relevant fields
+            var assessments = detectTamperingResult["assessments"];
+            if (assessments != null)
+            {
+                foreach (var assessment in assessments)
                 {
-                    // Extract required fields
-                    int tamperScore = detectTamperingResult["tamperScore"]?.Value<int>() ?? 0;
-                    string analysisId = detectTamperingResult["analysisId"]?.Value<string>();
-                    string image = detectTamperingResult["image"]?.Value<string>();
-                    string type = detectTamperingResult["type"]?.Value<string>();
-
-                    var simplifiedObject = new JObject
+                    var assessmentObject = new JObject
                     {
-                        ["TamperScore"] = tamperScore,
-                        ["AnalysisId"] = analysisId,
-                        ["Image"] = image,
-                        ["Type"] = type
+                        ["model"] = assessment["model"],
+                        ["compromisedScore"] = assessment["compromisedScore"],
+                        ["message"] = assessment["details"]?["message"] ?? ""
                     };
-
-                    resultArray.Add(simplifiedObject);
+                    ((JArray)simplifiedJson["assessments"]).Add(assessmentObject);
                 }
             }
-            return resultArray.ToString(Formatting.Indented);
+
+            // Return the simplified JSON as a string
+            return JsonConvert.SerializeObject(simplifiedJson, Formatting.Indented);
         }
 
 
