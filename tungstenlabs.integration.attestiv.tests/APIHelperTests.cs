@@ -1,5 +1,4 @@
 ﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
-using tungstenlabs.integration.attestiv;
 
 namespace tungstenlabs.integration.attestiv.tests
 {
