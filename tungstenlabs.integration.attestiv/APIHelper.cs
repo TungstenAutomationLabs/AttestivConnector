@@ -233,7 +233,7 @@ namespace tungstenlabs.integration.attestiv
                                 }
                             }
 
-                            if (!response.IsSuccessStatusCode)
+                            if ((!response.IsSuccessStatusCode) && (response.StatusCode != HttpStatusCode.Unauthorized))
                             {
                                 throw new WebException($"Error analyzing photo: {response.StatusCode}", WebExceptionStatus.ProtocolError);
                             }
