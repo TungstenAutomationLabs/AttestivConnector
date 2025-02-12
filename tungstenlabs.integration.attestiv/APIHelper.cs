@@ -19,6 +19,8 @@ namespace tungstenlabs.integration.attestiv
         public const string ATT_USER_ID = "ATT-USER-ID";
         public const string ATT_PSWD_ID = "ATT-PSWD-ID";
 
+        #region "Public Methods"
+
         /// <summary>
         /// Authenticates with Attestiv API using JWT and retrieves an access token, then saves all values in TA's server variables.
         /// </summary>
@@ -86,7 +88,7 @@ namespace tungstenlabs.integration.attestiv
         /// <summary>
         /// Uses the resulting JSON to extract the tamperscore for each file.
         /// </summary>
-        public string ExtractImageAndTamperScore(string jsonInput, int maxTamperScore)
+        public string ExtractBulkImageAndTamperScore(string jsonInput, int maxTamperScore)
         {
             // Parse the input JSON into a JArray
             JArray inputArray = JArray.Parse(jsonInput);
@@ -132,6 +134,51 @@ namespace tungstenlabs.integration.attestiv
 
             // Convert the final result to a JSON string
             return JsonConvert.SerializeObject(finalResult, Formatting.Indented);
+        }
+
+        // <summary>
+        /// Uses the resulting JSON to extract the tamperscore from the analysis result.
+        /// </summary>
+        public string ExtractResultTamperScore(string json)
+        {
+            // Parse the input JSON
+            var jsonArray = JArray.Parse(json);
+
+            // Extract the first object's "detect_tampering_result" and simplify it
+            var detectTamperingResult = jsonArray[0]["detect_tampering_result"];
+
+            if (detectTamperingResult == null)
+                throw new ArgumentException("Invalid JSON: detect_tampering_result is missing");
+
+            // Construct the simplified JSON structure
+            var simplifiedJson = new JObject
+            {
+                ["tamperScore"] = detectTamperingResult["tamperScore"],
+                ["image"] = detectTamperingResult["image"],
+                ["analysisId"] = detectTamperingResult["analysisId"],
+                ["_version"] = detectTamperingResult["_version"],
+                ["type"] = detectTamperingResult["type"],
+                ["assessments"] = new JArray()
+            };
+
+            // Iterate over assessments and extract relevant fields
+            var assessments = detectTamperingResult["assessments"];
+            if (assessments != null)
+            {
+                foreach (var assessment in assessments)
+                {
+                    var assessmentObject = new JObject
+                    {
+                        ["model"] = assessment["model"],
+                        ["compromisedScore"] = assessment["compromisedScore"],
+                        ["message"] = assessment["details"]?["message"] ?? ""
+                    };
+                    ((JArray)simplifiedJson["assessments"]).Add(assessmentObject);
+                }
+            }
+
+            // Return the simplified JSON as a string
+            return JsonConvert.SerializeObject(simplifiedJson, Formatting.Indented);
         }
 
         /// <summary>
@@ -186,7 +233,7 @@ namespace tungstenlabs.integration.attestiv
                                 }
                             }
 
-                            if (!response.IsSuccessStatusCode)
+                            if ((!response.IsSuccessStatusCode) && (response.StatusCode != HttpStatusCode.Unauthorized))
                             {
                                 throw new WebException($"Error analyzing photo: {response.StatusCode}", WebExceptionStatus.ProtocolError);
                             }
@@ -351,6 +398,26 @@ namespace tungstenlabs.integration.attestiv
             } while (shouldRetry);
         }
 
+        /// <summary>
+        /// Check file meets minimum requirements for Attestiv processing.
+        /// </summary>
+        /// <param name="taDocId">TotalAgility Document ID; this can only be an image file</param>
+        /// <param name="taSessionId">TA SessionID.</param>
+        /// <param name="taSdkUrl">TA SDK URL.</param>
+        /// <param name="horizontalMin">Minimum horizontal resolution.</param>
+        /// <param name="verticalMin">Minimum vertical resolution.</param>
+        public bool IsFileCompatible(string taDocId, string taSessionId, string taSdkUrl, float horizontalMin, float verticalMin)
+        {
+            KeyValuePair<string, byte[]> dict = GetKTADocumentFile(taDocId, taSdkUrl, taSessionId);
+            byte[] file = dict.Value;
+
+            return DoesFileMeetMinReqs(file, horizontalMin, verticalMin);
+        }
+
+        #endregion "Public Methods"
+
+        #region "Private Methods"
+
         private string ComputeSha256Hash(string rawData)
         {
             using (SHA256 sha256Hash = SHA256.Create())
@@ -491,7 +558,7 @@ namespace tungstenlabs.integration.attestiv
             return firstColumn;
         }
 
-        public static string GetMimeType(string fileExtension, byte[] fileBytes)
+        private static string GetMimeType(string fileExtension, byte[] fileBytes)
         {
             // Attempt to get MIME type based on the file extension
             if (!fileExtension.StartsWith(".")) { fileExtension = "." + fileExtension; }
@@ -545,6 +612,29 @@ namespace tungstenlabs.integration.attestiv
             return mimeType;  // Return default type if none of the byte signatures match
         }
 
+        private bool DoesFileMeetMinReqs(byte[] file, float horizontalMin, float verticalMin)
+        {
+            float hRes, vRes;
+
+            if ((file == null) || (file.Length == 0))
+                return false;
+
+            string filetype = GetMimeType("", file);
+            if ((filetype != "image/jpeg") && (filetype != "image/png"))
+                return false;
+
+            using (MemoryStream ms = new MemoryStream(file))
+            {
+                using (System.Drawing.Image image = System.Drawing.Image.FromStream(ms))
+                {
+                    hRes = image.Height;
+                    vRes = image.Width;
+                }
+            }
+
+            return (hRes >= horizontalMin && vRes >= verticalMin);
+        }
+
         private string GetFileExtension(string fileName)
         {
             if (string.IsNullOrEmpty(fileName))
@@ -556,5 +646,7 @@ namespace tungstenlabs.integration.attestiv
 
             return fileName.Substring(lastDotIndex + 1);
         }
+
+        #endregion "Private Methods"
     }
 }

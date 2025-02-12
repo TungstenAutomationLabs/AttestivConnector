@@ -1,5 +1,4 @@
 ﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
-using tungstenlabs.integration.attestiv;
 
 namespace tungstenlabs.integration.attestiv.tests
 {
@@ -9,10 +8,13 @@ namespace tungstenlabs.integration.attestiv.tests
         [TestMethod]
         public void AnalyzeImageBulk()
         {
-            string folder = @"5e97807d-d6fe-489b-8f60-b235013ee29b";
+            string taObj = @"";
+            string json = @"";
 
             APIHelper oAPI = new APIHelper();
-            string bulk = oAPI.AnalyzeImageBulk(folder, Constants.TOTALAGILITY_SESSION_ID, Constants.TOTALAGILITY_API_URL);
+            //string bulk = oAPI.AnalyzeImageBulk(folder, Constants.TOTALAGILITY_SESSION_ID, Constants.TOTALAGILITY_API_URL);
+            json = oAPI.AnalyzeImage(taObj, Constants.TOTALAGILITY_SESSION_ID, Constants.TOTALAGILITY_API_URL);
+            var result = oAPI.ExtractResultTamperScore(json);
         }
     }
 }
