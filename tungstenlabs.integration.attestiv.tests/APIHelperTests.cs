@@ -8,11 +8,14 @@ namespace tungstenlabs.integration.attestiv.tests
         [TestMethod]
         public void AnalyzeImageBulk()
         {
-            string taObj = @"";
-            string json = @"";
-
             APIHelper oAPI = new APIHelper();
-            //string bulk = oAPI.AnalyzeImageBulk(folder, Constants.TOTALAGILITY_SESSION_ID, Constants.TOTALAGILITY_API_URL);
+            string bulk = oAPI.AnalyzeImageBulk(folder, Constants.TOTALAGILITY_SESSION_ID, Constants.TOTALAGILITY_API_URL);
+        }
+
+        [TestMethod]
+        public void AnalyzeImage()
+        {
+            APIHelper oAPI = new APIHelper();
             json = oAPI.AnalyzeImage(taObj, Constants.TOTALAGILITY_SESSION_ID, Constants.TOTALAGILITY_API_URL);
             var result = oAPI.ExtractResultTamperScore(json);
         }
