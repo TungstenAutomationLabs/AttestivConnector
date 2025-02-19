@@ -8,7 +8,7 @@ namespace tungstenlabs.integration.attestiv.tests
         [TestMethod]
         public void AnalyzeImageBulk()
         {
-            string taObj = @"";
+            string taObj = @"2b86c399-b7e5-4bc6-a6a2-b2830049c34f";
             string json = @"";
 
             APIHelper oAPI = new APIHelper();
