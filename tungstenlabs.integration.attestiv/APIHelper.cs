@@ -231,14 +231,13 @@ namespace tungstenlabs.integration.attestiv
                                 {
                                     throw new InvalidOperationException("Maximum retry attempts reached. Unable to authenticate.");
                                 }
-                            }
-
-                            if ((!response.IsSuccessStatusCode) && (response.StatusCode != HttpStatusCode.Unauthorized))
+                            } 
+                            else if ((!response.IsSuccessStatusCode) && (response.StatusCode != HttpStatusCode.Unauthorized))
                             {
                                 throw new WebException($"Error analyzing photo: {response.StatusCode}", WebExceptionStatus.ProtocolError);
-                            }
-
-                            return response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                            } 
+                            else
+                                return response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
                         }
                     }
                 }
