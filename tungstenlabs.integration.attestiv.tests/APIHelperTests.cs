@@ -48,8 +48,8 @@ namespace tungstenlabs.integration.attestiv.tests
     [TestClass]
     public class APIHelperV2Tests
     {
-        private const string CLIENT_ID = "argus-tungsten-machine";
-        private const string CLIENT_SECRET = "Rn2oJdWKRa75TjofdBcmPmJVqbMftwQ9";
+        private const string CLIENT_ID = "";
+        private const string CLIENT_SECRET = "";
 
         private const string IMAGE_DOC_ID = "96a59774-2413-49d1-8774-b48d014fba44";
         private const string DOCUMENT_DOC_ID = "a20dde7a-e774-495c-a646-b4830147f321";
